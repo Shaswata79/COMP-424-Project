@@ -61,11 +61,13 @@ class StudentAgent(Agent):
 moves = ((-1, 0), (0, 1), (1, 0), (0, -1))
 opposites = {0: 2, 1: 3, 2: 0, 3: 1}    
 
-
+# num_simulations = 5, max_chosen_moves = 30
 def monte_carlo_tree_search(chess_board, my_pos, adv_pos, max_step, num_simulations, max_chosen_moves, start_time):
     sim = 0
+    # get possible moves
     valid_moves = get_possible_moves(deepcopy(chess_board), deepcopy(my_pos), deepcopy(adv_pos), max_step)
-            
+    
+    # if total possible moves more than some maximum N, choose N unique moves         
     chosen_moves = []
     if len(valid_moves) > int(max_chosen_moves):
         chosen_moves = random.sample(valid_moves, int(max_chosen_moves))
@@ -74,24 +76,23 @@ def monte_carlo_tree_search(chess_board, my_pos, adv_pos, max_step, num_simulati
         
     end_time = time.time()
     score_list = [(0, 0) for _ in range(len(chosen_moves))]     # (total_sims, total_score)
-    mcts_scores = [0 for _ in range(len(chosen_moves))]
+    mcts_scores = [0 for _ in range(len(chosen_moves))]         # score for each move
     
     # repeat until time limit is reached
     time_remaining = (2 - (end_time - start_time))
     while time_remaining > 0.5:
-        # for each of the 20 child_node of parent:
+        # for each of the 30 child_node of parent:
         for i in range (0, len(chosen_moves)):
             copy_chess_board = deepcopy(chess_board)
             my_new_pos = chosen_moves[i][0]
             barrier_dir = chosen_moves[i][1]
             set_barrier(copy_chess_board, my_new_pos[0], my_new_pos[1], barrier_dir)
             score = 0
-            # perform 10 random simulations from current child_node using default policy (10 simulations/child_node, total of 200 random simulations)
+            # perform 5 random simulations from current child_node using default policy (5 simulations/child_node, total of 150 random simulations)
             for j in range(0, int(num_simulations)):
                 # update score of child_node
                 score += simulate(copy_chess_board, my_new_pos, deepcopy(adv_pos), max_step, start_time)
                 sim += 1
-                # if time_remaining < 0.1 then stop, else continue with another iteration using the same 10 child_nodes 
                 end_time = time.time()    
                 time_remaining = (2 - (end_time - start_time))
                 if time_remaining < 0.4:
@@ -99,13 +100,12 @@ def monte_carlo_tree_search(chess_board, my_pos, adv_pos, max_step, num_simulati
             score_list[i] = (score_list[i][0]+num_simulations, score_list[i][1]+score)
             end_time = time.time()    
             time_remaining = (2 - (end_time - start_time))
+            # if time_remaining < 0.4 then stop, else continue with another iteration using the same 30 child_nodes 
             if time_remaining < 0.4:
                 break
     
     print("Run Statistics")
     print(f"Number of moves: {len(chosen_moves)}, Time remaining: {time_remaining}, Total simulations: {sim}")
-                
-    # the child_node with the highest simulation score is chosen as the next move 
     if len(score_list) == 0:
         print(f"Error, number of moves is 0!! Chess Board Length: {chess_board}, my_pos: {my_pos}, adv_pos: {adv_pos}")
         
@@ -113,10 +113,12 @@ def monte_carlo_tree_search(chess_board, my_pos, adv_pos, max_step, num_simulati
     for i in range(len(mcts_scores)):
         total_sims, total_score = score_list[i]
         mcts_scores[i] = total_score / total_sims
+    # the child_node with the highest simulation score is chosen as the next move 
     index = mcts_scores.index(max(mcts_scores))
     return chosen_moves[index]
 
 
+# class to keep track of game board state, player position and adversary position
 class State():    
     def __init__(self, chess_board, my_pos, adv_pos):
         self.my_pos = deepcopy(my_pos)
@@ -141,17 +143,18 @@ def get_possible_moves(chess_board, my_pos, adv_pos, max_step):
             break
         current_pos = bfs_queue.get()
         r, c, step = current_pos
-        for d in range (0, 4):                   # choose direction to move
+        for d in range (0, 4):                                  # choose direction to move
             if not chess_board[r,c,d] and not adv_pos == (r+moves[d][0], c+moves[d][1]) and step < max_step:
-                m_r, m_c = (r+moves[d][0], c+moves[d][1])   # valid direction for 1 step
-                if not (my_pos == (m_r, m_c)):     # do not put original pos in queue
+                m_r, m_c = (r+moves[d][0], c+moves[d][1])       # valid direction for 1 step
+                if not (my_pos == (m_r, m_c)):                  # do not put original pos in queue
                     bfs_queue.put((m_r, m_c, step+1)) 
-                for b in range(0, 4):            # choose direction to put barrier
+                for b in range(0, 4):                           # choose direction to put barrier
                     if (m_r, m_c, b) not in unique_pos and not chess_board[m_r,m_c,b]:
                         possible_pos.append(((m_r, m_c), b))
                         unique_pos.add((m_r, m_c, b))       
     return possible_pos
 
+# performs random simulations until end of game
 def simulate(chess_board, my_pos, adv_pos, max_step, start):
     state = State(chess_board, my_pos, adv_pos)
     turn = 0
@@ -173,6 +176,8 @@ def simulate(chess_board, my_pos, adv_pos, max_step, start):
             if state == -1:
                 return 0
         turn += 1
+        
+        # at every turn, check for endgame and return if true
         game_end, my_score, adv_score = check_endgame(state.chess_board, len(state.chess_board), state.my_pos, state.adv_pos)  
         if game_end:
             score = calculate_simulation_score(my_score, adv_score)
@@ -182,7 +187,6 @@ def simulate(chess_board, my_pos, adv_pos, max_step, start):
 
 
 def player_move(state, max_step):
-    #state.print_node()
     move = random_move(state.chess_board, state.my_pos, state.adv_pos, max_step)
     if move is not None:
         new_pos, dir = move
@@ -193,7 +197,6 @@ def player_move(state, max_step):
     return state
 
 def opponent_move(state, max_step):
-    #state.print_node()
     move = random_move(state.chess_board, state.adv_pos, state.my_pos, max_step)
     if move is not None:
         new_pos, dir = move
